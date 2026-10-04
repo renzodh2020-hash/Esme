@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "emerald_builder",
+  "version": "${version}",
+  "name": "Emerald Builder",
+  "description": "Constructor automático de columnas con bloques de esmeralda.",
+  "authors": [
+    "renzodh2020-hash"
+  ],
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.nakero.emeraldbuilder.EmeraldBuilderClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "~1.20.4",
+    "java": ">=17",
+    "fabric-api": "*"
+  }
+}
