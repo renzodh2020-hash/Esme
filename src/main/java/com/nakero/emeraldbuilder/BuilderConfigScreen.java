@@ -162,7 +162,7 @@ public class BuilderConfigScreen extends Screen {
             int mouseY,
             float delta) {
 
-        renderBackground(context);
+        renderBackground(context, mouseX, mouseY, delta);
 
         super.render(context, mouseX, mouseY, delta);
 
