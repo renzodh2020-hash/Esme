@@ -14,6 +14,7 @@ public class BuilderConfig {
     public int minZ = 0, maxZ = 299;
     public int minY = -64, maxY = 319;
     public String startDirection = "EAST";
+    public int placementCps = 10;
 
     public static BuilderConfig load() {
         try {
@@ -40,6 +41,7 @@ public class BuilderConfig {
         if (minZ > maxZ) { int t=minZ; minZ=maxZ; maxZ=t; }
         if (minY > maxY) { int t=minY; minY=maxY; maxY=t; }
         minY = Math.max(-64, minY);
+        placementCps = Math.max(1, Math.min(20, placementCps));
         maxY = Math.min(319, maxY);
         if ((long)maxX-minX > 999) maxX=minX+999;
         if ((long)maxZ-minZ > 999) maxZ=minZ+999;
