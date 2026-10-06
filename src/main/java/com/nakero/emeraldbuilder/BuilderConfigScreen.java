@@ -7,234 +7,98 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.text.Text;
 
 public class BuilderConfigScreen extends Screen {
-
     private final BuilderConfig config;
-
-    private TextFieldWidget minX;
-    private TextFieldWidget maxX;
-    private TextFieldWidget minZ;
-    private TextFieldWidget maxZ;
-    private TextFieldWidget minY;
-    private TextFieldWidget maxY;
+    private TextFieldWidget minX,maxX,minZ,maxZ,minY,maxY;
+    private ButtonWidget directionButton;
 
     public BuilderConfigScreen(BuilderConfig config) {
         super(Text.literal("Emerald Builder"));
-        this.config = config;
+        this.config=config;
     }
 
     @Override
     protected void init() {
+        int c=width/2, w=90;
+        minX=field(c-100,55,w,config.minX,"X mínima");
+        maxX=field(c+10,55,w,config.maxX,"X máxima");
+        minZ=field(c-100,95,w,config.minZ,"Z mínima");
+        maxZ=field(c+10,95,w,config.maxZ,"Z máxima");
+        minY=field(c-100,135,w,config.minY,"Y mínima");
+        maxY=field(c+10,135,w,config.maxY,"Y máxima");
 
-        int center = width / 2;
-        int fieldWidth = 90;
+        directionButton=addDrawableChild(ButtonWidget.builder(directionText(),b->nextDirection())
+                .dimensions(c-100,175,200,20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Guardar"),b->save())
+                .dimensions(c-100,215,95,20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Cancelar"),b->close())
+                .dimensions(c+5,215,95,20).build());
+    }
 
-        // X mínima / máxima
-        minX = new TextFieldWidget(
-                textRenderer,
-                center - 100, 55,
-                fieldWidth, 20,
-                Text.literal("X mínima")
-        );
-        minX.setText(String.valueOf(config.minX));
-        addDrawableChild(minX);
+    private TextFieldWidget field(int x,int y,int w,int value,String label) {
+        TextFieldWidget f=new TextFieldWidget(textRenderer,x,y,w,20,Text.literal(label));
+        f.setText(String.valueOf(value));
+        addDrawableChild(f);
+        return f;
+    }
 
-        maxX = new TextFieldWidget(
-                textRenderer,
-                center + 10, 55,
-                fieldWidth, 20,
-                Text.literal("X máxima")
-        );
-        maxX.setText(String.valueOf(config.maxX));
-        addDrawableChild(maxX);
+    private Text directionText() {
+        return Text.literal("Dirección inicial: "+spanish(config.startDirection));
+    }
 
-        // Z mínima / máxima
-        minZ = new TextFieldWidget(
-                textRenderer,
-                center - 100, 95,
-                fieldWidth, 20,
-                Text.literal("Z mínima")
-        );
-        minZ.setText(String.valueOf(config.minZ));
-        addDrawableChild(minZ);
+    private String spanish(String d) {
+        return switch(d) {
+            case "NORTH" -> "Norte";
+            case "SOUTH" -> "Sur";
+            case "WEST" -> "Oeste";
+            default -> "Este";
+        };
+    }
 
-        maxZ = new TextFieldWidget(
-                textRenderer,
-                center + 10, 95,
-                fieldWidth, 20,
-                Text.literal("Z máxima")
-        );
-        maxZ.setText(String.valueOf(config.maxZ));
-        addDrawableChild(maxZ);
-
-        // Y mínima / máxima
-        minY = new TextFieldWidget(
-                textRenderer,
-                center - 100, 135,
-                fieldWidth, 20,
-                Text.literal("Y mínima")
-        );
-        minY.setText(String.valueOf(config.minY));
-        addDrawableChild(minY);
-
-        maxY = new TextFieldWidget(
-                textRenderer,
-                center + 10, 135,
-                fieldWidth, 20,
-                Text.literal("Y máxima")
-        );
-        maxY.setText(String.valueOf(config.maxY));
-        addDrawableChild(maxY);
-
-        addDrawableChild(
-                ButtonWidget.builder(
-                        Text.literal("Guardar"),
-                        button -> save()
-                ).dimensions(
-                        center - 100,
-                        185,
-                        95,
-                        20
-                ).build()
-        );
-
-        addDrawableChild(
-                ButtonWidget.builder(
-                        Text.literal("Cancelar"),
-                        button -> close()
-                ).dimensions(
-                        center + 5,
-                        185,
-                        95,
-                        20
-                ).build()
-        );
+    private void nextDirection() {
+        config.startDirection=switch(config.startDirection) {
+            case "NORTH" -> "EAST";
+            case "EAST" -> "SOUTH";
+            case "SOUTH" -> "WEST";
+            default -> "NORTH";
+        };
+        directionButton.setMessage(directionText());
     }
 
     private void save() {
-
         try {
-            config.minX = Integer.parseInt(minX.getText().trim());
-            config.maxX = Integer.parseInt(maxX.getText().trim());
-
-            config.minZ = Integer.parseInt(minZ.getText().trim());
-            config.maxZ = Integer.parseInt(maxZ.getText().trim());
-
-            config.minY = Integer.parseInt(minY.getText().trim());
-            config.maxY = Integer.parseInt(maxY.getText().trim());
-
+            config.minX=Integer.parseInt(minX.getText().trim());
+            config.maxX=Integer.parseInt(maxX.getText().trim());
+            config.minZ=Integer.parseInt(minZ.getText().trim());
+            config.maxZ=Integer.parseInt(maxZ.getText().trim());
+            config.minY=Integer.parseInt(minY.getText().trim());
+            config.maxY=Integer.parseInt(maxY.getText().trim());
             config.normalize();
             config.save();
-
-            if (client != null && client.player != null) {
-                client.player.sendMessage(
-                        Text.literal(
-                                "§aConfiguración guardada §7| "
-                                        + config.width()
-                                        + "x"
-                                        + config.depth()
-                                        + " = "
-                                        + config.totalColumns()
-                                        + " columnas"
-                        ),
-                        true
-                );
-            }
-
+            if(client!=null && client.player!=null)
+                client.player.sendMessage(Text.literal("§aConfiguración guardada §7| "
+                        +config.width()+"x"+config.depth()+" | "+spanish(config.startDirection)),true);
             close();
-
-        } catch (NumberFormatException e) {
-
-            if (client != null && client.player != null) {
-                client.player.sendMessage(
-                        Text.literal(
-                                "§cIntroduce solamente coordenadas numéricas."
-                        ),
-                        true
-                );
-            }
+        } catch(NumberFormatException e) {
+            if(client!=null && client.player!=null)
+                client.player.sendMessage(Text.literal("§cIntroduce solamente coordenadas numéricas."),true);
         }
     }
 
     @Override
-    public void render(
-            DrawContext context,
-            int mouseX,
-            int mouseY,
-            float delta) {
-
-        renderBackground(context, mouseX, mouseY, delta);
-
-        super.render(context, mouseX, mouseY, delta);
-
-        int center = width / 2;
-
-        context.drawCenteredTextWithShadow(
-                textRenderer,
-                Text.literal("Emerald Builder - Configuración"),
-                center,
-                20,
-                0xFFFFFF
-        );
-
-        context.drawTextWithShadow(
-                textRenderer,
-                Text.literal("X mínima"),
-                center - 100,
-                43,
-                0xAAAAAA
-        );
-
-        context.drawTextWithShadow(
-                textRenderer,
-                Text.literal("X máxima"),
-                center + 10,
-                43,
-                0xAAAAAA
-        );
-
-        context.drawTextWithShadow(
-                textRenderer,
-                Text.literal("Z mínima"),
-                center - 100,
-                83,
-                0xAAAAAA
-        );
-
-        context.drawTextWithShadow(
-                textRenderer,
-                Text.literal("Z máxima"),
-                center + 10,
-                83,
-                0xAAAAAA
-        );
-
-        context.drawTextWithShadow(
-                textRenderer,
-                Text.literal("Y mínima"),
-                center - 100,
-                123,
-                0xAAAAAA
-        );
-
-        context.drawTextWithShadow(
-                textRenderer,
-                Text.literal("Y máxima"),
-                center + 10,
-                123,
-                0xAAAAAA
-        );
-
-        context.drawCenteredTextWithShadow(
-                textRenderer,
-                Text.literal("P = menú   |   O = iniciar/detener"),
-                center,
-                220,
-                0xAAAAAA
-        );
+    public void render(DrawContext context,int mouseX,int mouseY,float delta) {
+        renderBackground(context,mouseX,mouseY,delta);
+        super.render(context,mouseX,mouseY,delta);
+        int c=width/2;
+        context.drawCenteredTextWithShadow(textRenderer,Text.literal("Emerald Builder - Configuración"),c,20,0xFFFFFF);
+        context.drawTextWithShadow(textRenderer,Text.literal("X mínima"),c-100,43,0xAAAAAA);
+        context.drawTextWithShadow(textRenderer,Text.literal("X máxima"),c+10,43,0xAAAAAA);
+        context.drawTextWithShadow(textRenderer,Text.literal("Z mínima"),c-100,83,0xAAAAAA);
+        context.drawTextWithShadow(textRenderer,Text.literal("Z máxima"),c+10,83,0xAAAAAA);
+        context.drawTextWithShadow(textRenderer,Text.literal("Y mínima"),c-100,123,0xAAAAAA);
+        context.drawTextWithShadow(textRenderer,Text.literal("Y máxima"),c+10,123,0xAAAAAA);
+        context.drawCenteredTextWithShadow(textRenderer,Text.literal("P = menú | O = iniciar/detener"),c,250,0xAAAAAA);
     }
 
     @Override
-    public boolean shouldPause() {
-        return false;
-    }
+    public boolean shouldPause(){ return false; }
 }
