@@ -32,8 +32,16 @@ public class EmeraldBuilderClient implements ClientModInitializer {
     private double beforeHomeZ;
 
     private enum State {
-        IDLE, BUILDING, MOVE_OFF_TOP, FALLING,
-        HOME_WAIT, OPEN_CHEST, LOOTING, BACK_WAIT
+        IDLE, CENTER_BOTTOM, FLIGHT_TAP_1, FLIGHT_GAP_1, FLIGHT_TAP_2,
+        ASCEND_BUILD, TOP_FLIGHT_TAP_1, TOP_FLIGHT_GAP, TOP_FLIGHT_TAP_2,
+        MOVE_TO_NEXT, FALLING, HOME_WAIT, OPEN_CHEST, LOOTING, BACK_WAIT
+    }
+
+    private enum Dir {
+        NORTH(0,-1), EAST(1,0), SOUTH(0,1), WEST(-1,0);
+        final int dx, dz;
+        Dir(int dx,int dz){ this.dx=dx; this.dz=dz; }
+        Dir right(){ return switch(this){ case NORTH->EAST; case EAST->SOUTH; case SOUTH->WEST; case WEST->NORTH; }; }
     }
 
     private record Cell(int x, int z) {}
@@ -80,8 +88,15 @@ public class EmeraldBuilderClient implements ClientModInitializer {
         ticks++;
 
         switch (state) {
-            case BUILDING -> build(mc);
-            case MOVE_OFF_TOP -> moveTop(mc);
+            case CENTER_BOTTOM -> centerBottom(mc);
+            case FLIGHT_TAP_1 -> flightTap1(mc);
+            case FLIGHT_GAP_1 -> flightGap1(mc);
+            case FLIGHT_TAP_2 -> flightTap2(mc);
+            case ASCEND_BUILD -> ascendBuild(mc);
+            case TOP_FLIGHT_TAP_1 -> topFlightTap1(mc);
+            case TOP_FLIGHT_GAP -> topFlightGap(mc);
+            case TOP_FLIGHT_TAP_2 -> topFlightTap2(mc);
+            case MOVE_TO_NEXT -> moveToNext(mc);
             case FALLING -> falling(mc);
             case HOME_WAIT -> homeWait(mc);
             case OPEN_CHEST -> openChest(mc);
@@ -96,7 +111,7 @@ public class EmeraldBuilderClient implements ClientModInitializer {
 
         cfg.normalize();
         cfg.save();
-        buildSpiral();
+        buildRightTurnSpiral();
 
         if (path.isEmpty()) {
             msg(mc, "§cÁrea inválida");
@@ -105,7 +120,7 @@ public class EmeraldBuilderClient implements ClientModInitializer {
 
         pathIndex = nearestPathIndex(mc);
         running = true;
-        state = State.BUILDING;
+        state = State.CENTER_BOTTOM;
         ticks = 0;
 
         msg(mc, "§aConstructor ACTIVADO §7| columna "
@@ -131,61 +146,106 @@ public class EmeraldBuilderClient implements ClientModInitializer {
         }
     }
 
-    private void build(MinecraftClient mc) {
-        if (!ensureEmerald(mc)) {
-            beginRefill(mc);
-            return;
-        }
-
-        Cell cell = path.get(pathIndex);
-        double dx = (cell.x() + 0.5) - mc.player.getX();
-        double dz = (cell.z() + 0.5) - mc.player.getZ();
-
-        if (Math.hypot(dx, dz) > 0.42) {
-            face(mc, dx, dz);
-            mc.player.setPitch(0);
-            mc.options.forwardKey.setPressed(true);
-            mc.options.jumpKey.setPressed(false);
-            mc.options.useKey.setPressed(false);
-            return;
-        }
-
-        mc.options.forwardKey.setPressed(false);
-
-        if (mc.player.getY() >= cfg.maxY) {
-            release(mc);
-            state = State.MOVE_OFF_TOP;
-            ticks = 0;
-            return;
-        }
-
-        mc.player.getInventory().selectedSlot = 0;
-        mc.player.setPitch(89.5f);
-        mc.options.jumpKey.setPressed(true);
-        mc.options.useKey.setPressed(true);
+    private void changeState(State next) {
+        state = next;
+        ticks = 0;
     }
 
-    private void moveTop(MinecraftClient mc) {
+    private void centerBottom(MinecraftClient mc) {
+        if (!ensureEmerald(mc)) { beginRefill(mc); return; }
+
+        Cell cell = path.get(pathIndex);
+        double dx = cell.x() + 0.5 - mc.player.getX();
+        double dz = cell.z() + 0.5 - mc.player.getZ();
+
+        if (Math.hypot(dx, dz) > 0.28) {
+            smoothFace(mc, dx, dz, 10.0f);
+            mc.player.setPitch(0);
+            mc.options.forwardKey.setPressed(true);
+            return;
+        }
+
+        release(mc);
+        if (mc.player.getY() > cfg.minY + 1.5) {
+            changeState(State.FALLING);
+            return;
+        }
+        changeState(State.FLIGHT_TAP_1);
+    }
+
+    private void flightTap1(MinecraftClient mc) {
+        release(mc);
+        mc.options.jumpKey.setPressed(true);
+        if (ticks >= 2) changeState(State.FLIGHT_GAP_1);
+    }
+
+    private void flightGap1(MinecraftClient mc) {
+        mc.options.jumpKey.setPressed(false);
+        if (ticks >= 2) changeState(State.FLIGHT_TAP_2);
+    }
+
+    private void flightTap2(MinecraftClient mc) {
+        mc.options.jumpKey.setPressed(true);
+        if (ticks >= 2) changeState(State.ASCEND_BUILD);
+    }
+
+    private void ascendBuild(MinecraftClient mc) {
+        if (!ensureEmerald(mc)) { beginRefill(mc); return; }
+
+        mc.player.getInventory().selectedSlot = 0;
+        mc.options.forwardKey.setPressed(false);
+        mc.player.setPitch(89.5f);
+        mc.options.jumpKey.setPressed(true);
+
+        // 20 ticks/s -> una pulsación cada 2 ticks = 10 CPS.
+        mc.options.useKey.setPressed((ticks & 1) == 0);
+
+        if (mc.player.getY() >= cfg.maxY) {
+            mc.options.useKey.setPressed(false);
+            mc.options.jumpKey.setPressed(false);
+            changeState(State.TOP_FLIGHT_TAP_1);
+        }
+    }
+
+    private void topFlightTap1(MinecraftClient mc) {
+        release(mc);
+        mc.options.jumpKey.setPressed(true);
+        if (ticks >= 2) changeState(State.TOP_FLIGHT_GAP);
+    }
+
+    private void topFlightGap(MinecraftClient mc) {
+        mc.options.jumpKey.setPressed(false);
+        if (ticks >= 2) changeState(State.TOP_FLIGHT_TAP_2);
+    }
+
+    private void topFlightTap2(MinecraftClient mc) {
+        mc.options.jumpKey.setPressed(true);
+        if (ticks >= 2) {
+            mc.options.jumpKey.setPressed(false);
+            changeState(State.MOVE_TO_NEXT);
+        }
+    }
+
+    private void moveToNext(MinecraftClient mc) {
         if (pathIndex + 1 >= path.size()) {
             stop(mc, "§aÁrea completada");
             return;
         }
 
         Cell next = path.get(pathIndex + 1);
-        double dx = (next.x() + 0.5) - mc.player.getX();
-        double dz = (next.z() + 0.5) - mc.player.getZ();
+        double dx = next.x() + 0.5 - mc.player.getX();
+        double dz = next.z() + 0.5 - mc.player.getZ();
 
-        face(mc, dx, dz);
+        smoothFace(mc, dx, dz, 8.0f);
         mc.player.setPitch(0);
         mc.options.forwardKey.setPressed(true);
         mc.options.jumpKey.setPressed(false);
         mc.options.useKey.setPressed(false);
 
-        if (Math.hypot(dx, dz) < 0.35 || ticks > 50) {
+        if (Math.hypot(dx, dz) < 0.28 || ticks > 35) {
             mc.options.forwardKey.setPressed(false);
             pathIndex++;
-            state = State.FALLING;
-            ticks = 0;
+            changeState(State.FALLING);
         }
     }
 
@@ -193,20 +253,17 @@ public class EmeraldBuilderClient implements ClientModInitializer {
         release(mc);
 
         Cell cell = path.get(pathIndex);
-        double dx = (cell.x() + 0.5) - mc.player.getX();
-        double dz = (cell.z() + 0.5) - mc.player.getZ();
+        double dx = cell.x() + 0.5 - mc.player.getX();
+        double dz = cell.z() + 0.5 - mc.player.getZ();
 
-        if (Math.hypot(dx, dz) > 0.45 && mc.player.getY() > cfg.minY + 2) {
-            face(mc, dx, dz);
+        if (Math.hypot(dx, dz) > 0.38 && mc.player.getY() > cfg.minY + 2.0) {
+            smoothFace(mc, dx, dz, 5.0f);
             mc.options.forwardKey.setPressed(true);
-        } else {
-            mc.options.forwardKey.setPressed(false);
         }
 
-        if (mc.player.isOnGround() || mc.player.getY() <= cfg.minY + 0.15) {
+        if (mc.player.isOnGround() || mc.player.getY() <= cfg.minY + 0.35) {
             release(mc);
-            state = State.BUILDING;
-            ticks = 0;
+            changeState(State.CENTER_BOTTOM);
             msg(mc, "§7Columna " + (pathIndex + 1) + "/" + path.size());
         }
     }
@@ -357,49 +414,83 @@ public class EmeraldBuilderClient implements ClientModInitializer {
         }
     }
 
-    private void face(MinecraftClient mc, double dx, double dz) {
-        float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        mc.player.setYaw(yaw);
-        mc.player.setHeadYaw(yaw);
+    private void smoothFace(MinecraftClient mc, double dx, double dz, float maxStep) {
+        float target = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        float current = mc.player.getYaw();
+        float diff = wrapDegrees(target - current);
+        diff = Math.max(-maxStep, Math.min(maxStep, diff));
+        float next = current + diff;
+        mc.player.setYaw(next);
+        mc.player.setHeadYaw(next);
+    }
+
+    private float wrapDegrees(float value) {
+        value %= 360.0f;
+        if (value >= 180.0f) value -= 360.0f;
+        if (value < -180.0f) value += 360.0f;
+        return value;
     }
 
     private double sq(double value) {
         return value * value;
     }
 
-    private void buildSpiral() {
+    private Dir configuredDirection() {
+        return switch (cfg.startDirection) {
+            case "NORTH" -> Dir.NORTH;
+            case "SOUTH" -> Dir.SOUTH;
+            case "WEST" -> Dir.WEST;
+            default -> Dir.EAST;
+        };
+    }
+
+    private void buildRightTurnSpiral() {
         path.clear();
 
-        int left = cfg.minX;
-        int right = cfg.maxX;
-        int top = cfg.minZ;
-        int bottom = cfg.maxZ;
+        int width = cfg.width();
+        int depth = cfg.depth();
+        boolean[][] used = new boolean[width][depth];
+        Dir dir = configuredDirection();
 
-        while (left <= right && top <= bottom) {
-            for (int x = left; x <= right; x++) {
-                path.add(new Cell(x, top));
-            }
-            top++;
-
-            for (int z = top; z <= bottom; z++) {
-                path.add(new Cell(right, z));
-            }
-            right--;
-
-            if (top <= bottom) {
-                for (int x = right; x >= left; x--) {
-                    path.add(new Cell(x, bottom));
-                }
-                bottom--;
-            }
-
-            if (left <= right) {
-                for (int z = bottom; z >= top; z--) {
-                    path.add(new Cell(left, z));
-                }
-                left++;
-            }
+        int x, z;
+        switch (dir) {
+            case EAST -> { x = cfg.minX; z = cfg.minZ; }
+            case SOUTH -> { x = cfg.maxX; z = cfg.minZ; }
+            case WEST -> { x = cfg.maxX; z = cfg.maxZ; }
+            case NORTH -> { x = cfg.minX; z = cfg.maxZ; }
+            default -> throw new IllegalStateException();
         }
+
+        int total = width * depth;
+        for (int count = 0; count < total; count++) {
+            path.add(new Cell(x, z));
+            used[x - cfg.minX][z - cfg.minZ] = true;
+            if (count == total - 1) break;
+
+            int nx = x + dir.dx;
+            int nz = z + dir.dz;
+
+            if (!inside(nx, nz) || used[nx - cfg.minX][nz - cfg.minZ]) {
+                dir = dir.right();
+                nx = x + dir.dx;
+                nz = z + dir.dz;
+            }
+
+            int guard = 0;
+            while ((!inside(nx, nz) || used[nx - cfg.minX][nz - cfg.minZ]) && guard < 3) {
+                dir = dir.right();
+                nx = x + dir.dx;
+                nz = z + dir.dz;
+                guard++;
+            }
+
+            x = nx;
+            z = nz;
+        }
+    }
+
+    private boolean inside(int x, int z) {
+        return x >= cfg.minX && x <= cfg.maxX && z >= cfg.minZ && z <= cfg.maxZ;
     }
 
     private int nearestPathIndex(MinecraftClient mc) {
