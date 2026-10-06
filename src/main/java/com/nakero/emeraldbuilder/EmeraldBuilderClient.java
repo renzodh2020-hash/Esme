@@ -11,6 +11,9 @@ import net.minecraft.item.Items;
 import net.minecraft.screen.GenericContainerScreenHandler;
 import net.minecraft.screen.slot.SlotActionType;
 import net.minecraft.text.Text;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.hit.HitResult;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -26,6 +29,8 @@ public class EmeraldBuilderClient implements ClientModInitializer {
     private final List<Cell> path = new ArrayList<>();
     private int pathIndex = 0;
     private int ticks = 0;
+    private double clickAccumulator = 0.0;
+    private boolean disableFlightThenFall = false;
 
     private double beforeHomeX;
     private double beforeHomeY;
@@ -120,7 +125,17 @@ public class EmeraldBuilderClient implements ClientModInitializer {
 
         pathIndex = nearestPathIndex(mc);
         running = true;
-        state = State.CENTER_BOTTOM;
+        clickAccumulator = 0.0;
+        disableFlightThenFall = false;
+        release(mc);
+        if (mc.player.getAbilities().flying && mc.player.getY() > cfg.minY + 1.5) {
+            disableFlightThenFall = true;
+            state = State.TOP_FLIGHT_TAP_1;
+        } else if (mc.player.getY() > cfg.minY + 1.5) {
+            state = State.FALLING;
+        } else {
+            state = State.CENTER_BOTTOM;
+        }
         ticks = 0;
 
         msg(mc, "§aConstructor ACTIVADO §7| columna "
@@ -197,8 +212,13 @@ public class EmeraldBuilderClient implements ClientModInitializer {
         mc.player.setPitch(89.5f);
         mc.options.jumpKey.setPressed(true);
 
-        // 20 ticks/s -> una pulsación cada 2 ticks = 10 CPS.
-        mc.options.useKey.setPressed((ticks & 1) == 0);
+        // CPS configurables: genera una interacción real de uso.
+        mc.options.useKey.setPressed(false);
+        clickAccumulator += cfg.placementCps / 20.0;
+        if (clickAccumulator >= 1.0) {
+            clickAccumulator -= 1.0;
+            placeBlock(mc);
+        }
 
         if (mc.player.getY() >= cfg.maxY) {
             mc.options.useKey.setPressed(false);
@@ -222,7 +242,12 @@ public class EmeraldBuilderClient implements ClientModInitializer {
         mc.options.jumpKey.setPressed(true);
         if (ticks >= 2) {
             mc.options.jumpKey.setPressed(false);
-            changeState(State.MOVE_TO_NEXT);
+            if (disableFlightThenFall) {
+                disableFlightThenFall = false;
+                changeState(State.FALLING);
+            } else {
+                changeState(State.MOVE_TO_NEXT);
+            }
         }
     }
 
@@ -265,6 +290,15 @@ public class EmeraldBuilderClient implements ClientModInitializer {
             release(mc);
             changeState(State.CENTER_BOTTOM);
             msg(mc, "§7Columna " + (pathIndex + 1) + "/" + path.size());
+        }
+    }
+
+    private void placeBlock(MinecraftClient mc) {
+        if (mc.interactionManager == null || mc.player == null) return;
+        HitResult hit = mc.player.raycast(5.0, 1.0f, false);
+        if (hit.getType() == HitResult.Type.BLOCK) {
+            mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, (BlockHitResult) hit);
+            mc.player.swingHand(Hand.MAIN_HAND);
         }
     }
 
@@ -408,8 +442,12 @@ public class EmeraldBuilderClient implements ClientModInitializer {
         release(mc);
 
         if (ticks > 50) {
-            state = State.FALLING;
-            ticks = 0;
+            if (mc.player.getAbilities().flying) {
+                disableFlightThenFall = true;
+                changeState(State.TOP_FLIGHT_TAP_1);
+            } else {
+                changeState(State.FALLING);
+            }
             msg(mc, "§aRegresando al trabajo");
         }
     }
